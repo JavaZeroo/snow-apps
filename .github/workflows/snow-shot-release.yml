@@ -4,6 +4,7 @@ on:
   push:
     tags:
       - "v*_snow-shot"
+  workflow_dispatch: {}
 
 permissions:
   contents: write
@@ -85,11 +86,11 @@ jobs:
         shell: pwsh
         run: .\scripts\stage-snow-shot-release.ps1
 
-      - name: Verify tag and locate package
+      - name: Locate package
         id: package
         shell: pwsh
         run: |
-          if ($env:GITHUB_REF_NAME -notmatch '^v.+_snow-shot$') {
+          if ($env:GITHUB_REF_TYPE -eq 'tag' -and $env:GITHUB_REF_NAME -notmatch '^v.+_snow-shot$') {
             throw "Unexpected release tag: $env:GITHUB_REF_NAME"
           }
           $packages = @(Get-ChildItem build\snow-shot-msvc-release -File |
@@ -100,7 +101,15 @@ jobs:
           $assets | Out-File $env:GITHUB_OUTPUT -Encoding utf8 -Append
           "SNOW_ASSETS" | Out-File $env:GITHUB_OUTPUT -Encoding utf8 -Append
 
+      - name: Upload build artifacts (manual runs)
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: snow-shot-x64
+          path: ${{ steps.package.outputs.assets }}
+
       - name: Create draft prerelease with generated changelog
+        if: startsWith(github.ref, 'refs/tags/')
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
@@ -111,3 +120,116 @@ jobs:
             --prerelease `
             --generate-notes `
             --title "Snow Shot $env:GITHUB_REF_NAME"
+
+  build-and-release-arm64:
+    name: Build and draft Snow Shot release (ARM64)
+    needs: build-and-release
+    runs-on: windows-2025-vs2026
+    env:
+      VCPKG_BINARY_SOURCES: clear;x-gha,readwrite
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Select MSVC ARM64 cross tools
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64_arm64
+          toolset: 14.51
+          vsversion: 18.0
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.97.1
+          target: aarch64-pc-windows-msvc
+          components: rustfmt, clippy
+
+      - name: Export GitHub Actions cache service
+        uses: actions/github-script@v7
+        with:
+          script: |
+            core.exportVariable('ACTIONS_CACHE_URL', process.env.ACTIONS_CACHE_URL || '');
+            core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            snow-crates -> ../build/snow-shot-msvc-release-arm64/cargo
+            snow_draw_engine_qt -> ../build/snow-shot-msvc-release-arm64/cargo
+          cache-on-failure: true
+
+      - name: Cache static Qt kit (x64 host tools)
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.tool_cache }}\snow-qt\6.11.1\msvc2026_64-static
+          key: snow-qt-static-6.11.1-msvc2026-x64-${{ runner.os }}
+
+      - name: Cache static Qt kit (ARM64)
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.tool_cache }}\snow-qt\6.11.1\msvc2026_arm64-static
+          key: snow-qt-static-6.11.1-msvc2026-arm64-${{ runner.os }}
+
+      - name: Prepare Qt 6.11.1 static kits (host x64 + target ARM64)
+        shell: pwsh
+        run: |
+          # The ARM64 build cross-compiles from this x64 host, so qtbase needs a
+          # host (x64) Qt install to run moc/rcc/uic during its own build. The
+          # x64 job in this workflow already builds and caches this kit.
+          $hostPrefix = Join-Path $env:RUNNER_TOOL_CACHE "snow-qt\6.11.1\msvc2026_64-static"
+          $hostQtDir = Join-Path $hostPrefix "lib\cmake\Qt6"
+          if (-not (Test-Path -LiteralPath (Join-Path $hostQtDir "Qt6Config.cmake") -PathType Leaf)) {
+            throw "The x64 static Qt kit was not found at $hostQtDir. It should have been built and cached by the build-and-release job."
+          }
+
+          $targetPrefix = Join-Path $env:RUNNER_TOOL_CACHE "snow-qt\6.11.1\msvc2026_arm64-static"
+          $targetQtDir = Join-Path $targetPrefix "lib\cmake\Qt6"
+          if (-not (Test-Path -LiteralPath (Join-Path $targetQtDir "Qt6Config.cmake") -PathType Leaf)) {
+            & "$env:GITHUB_WORKSPACE\scripts\build-static-qt.ps1" -QtVersion 6.11.1 -InstallPrefix $targetPrefix -ExternalHostBinDir (Join-Path $hostPrefix "bin")
+            if ($LASTEXITCODE -ne 0) { throw "Static Qt ARM64 cross build failed." }
+          }
+          if (-not (Test-Path -LiteralPath (Join-Path $targetQtDir "Qt6Config.cmake") -PathType Leaf)) {
+            throw "Qt 6.11.1 static ARM64 CMake package was not found at $targetQtDir"
+          }
+          "SNOW_QT_STATIC_DIR=$targetQtDir" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "Qt6_DIR=$targetQtDir" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Install vcpkg and project dependencies
+        shell: pwsh
+        run: .\scripts\bootstrap.ps1 -Qt6Dir $env:SNOW_QT_STATIC_DIR -Arch arm64 -VcpkgVariants Static
+
+      - name: Build, audit, and package statically (installer + portable)
+        shell: pwsh
+        run: .\scripts\stage-snow-shot-release.ps1 -Architecture arm64 -IncludePortable
+
+      - name: Locate ARM64 packages
+        id: package
+        shell: pwsh
+        run: |
+          $packages = @(Get-ChildItem build\snow-shot-msvc-release-arm64 -File |
+            Where-Object { $_.Name -match '^snow-shot-.+-windows-arm64\.(exe|exe\.sha256|zip|zip\.sha256)$' })
+          if ($packages.Count -lt 4) { throw "The ARM64 installer, portable package, and checksums were not all produced." }
+          $assets = ($packages | ForEach-Object { $_.FullName }) -join "`n"
+          "assets<<SNOW_ASSETS" | Out-File $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          $assets | Out-File $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "SNOW_ASSETS" | Out-File $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+      - name: Upload build artifacts (manual runs)
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: snow-shot-arm64
+          path: ${{ steps.package.outputs.assets }}
+
+      - name: Attach ARM64 assets to the draft release
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $assets = "${{ steps.package.outputs.assets }}" -split "`n" | Where-Object { $_ }
+          gh release upload $env:GITHUB_REF_NAME @assets --clobber

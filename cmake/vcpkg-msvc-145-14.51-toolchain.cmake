@@ -51,7 +51,12 @@ if(_snow_msvc_145_root STREQUAL "")
 endif()
 string(REGEX REPLACE "[/\\]+$" "" _snow_msvc_145_root "${_snow_msvc_145_root}")
 file(TO_CMAKE_PATH "${_snow_msvc_145_root}" _snow_msvc_145_root)
-set(_snow_msvc_145_bin "${_snow_msvc_145_root}/bin/HostX64/x64")
+if(DEFINED VCPKG_TARGET_ARCHITECTURE AND NOT VCPKG_TARGET_ARCHITECTURE STREQUAL "")
+    set(_snow_target_arch "${VCPKG_TARGET_ARCHITECTURE}")
+else()
+    set(_snow_target_arch "x64")
+endif()
+set(_snow_msvc_145_bin "${_snow_msvc_145_root}/bin/HostX64/${_snow_target_arch}")
 set(CMAKE_C_COMPILER "${_snow_msvc_145_bin}/cl.exe" CACHE FILEPATH "" FORCE)
 set(CMAKE_CXX_COMPILER "${_snow_msvc_145_bin}/cl.exe" CACHE FILEPATH "" FORCE)
 set(CMAKE_LINKER "${_snow_msvc_145_bin}/link.exe" CACHE FILEPATH "" FORCE)
@@ -76,9 +81,9 @@ endif()
 if(_snow_windows_sdk_root STREQUAL "" OR NOT IS_DIRECTORY "${_snow_windows_sdk_include}")
     message(FATAL_ERROR "Windows 10 SDK was not found. Set WindowsSdkDir/WindowsSDKVersion or install a Windows SDK.")
 endif()
-set(CMAKE_MT "${_snow_windows_sdk_root}/bin/${_snow_windows_sdk_version}/x64/mt.exe"
+set(CMAKE_MT "${_snow_windows_sdk_root}/bin/${_snow_windows_sdk_version}/${_snow_target_arch}/mt.exe"
     CACHE FILEPATH "" FORCE)
-set(CMAKE_RC_COMPILER "${_snow_windows_sdk_root}/bin/${_snow_windows_sdk_version}/x64/rc.exe"
+set(CMAKE_RC_COMPILER "${_snow_windows_sdk_root}/bin/${_snow_windows_sdk_version}/${_snow_target_arch}/rc.exe"
     CACHE FILEPATH "" FORCE)
 set(_snow_include_directories
     "${_snow_msvc_145_root}/include"
@@ -88,9 +93,9 @@ set(_snow_include_directories
     "${_snow_windows_sdk_include}/winrt"
     "${_snow_windows_sdk_include}/cppwinrt")
 set(_snow_library_directories
-    "${_snow_msvc_145_root}/lib/x64"
-    "${_snow_windows_sdk_root}/Lib/${_snow_windows_sdk_version}/um/x64"
-    "${_snow_windows_sdk_root}/Lib/${_snow_windows_sdk_version}/ucrt/x64")
+    "${_snow_msvc_145_root}/lib/${_snow_target_arch}"
+    "${_snow_windows_sdk_root}/Lib/${_snow_windows_sdk_version}/um/${_snow_target_arch}"
+    "${_snow_windows_sdk_root}/Lib/${_snow_windows_sdk_version}/ucrt/${_snow_target_arch}")
 set(_snow_include_flags "")
 set(_snow_rc_include_flags "")
 set(_snow_linker_paths "")
@@ -126,7 +131,7 @@ endif()
 
 foreach(_snow_linker_kind IN ITEMS EXE SHARED MODULE)
     string(FIND "${CMAKE_${_snow_linker_kind}_LINKER_FLAGS}"
-        "${_snow_msvc_145_root}/lib/x64" _snow_has_msvc_libpath)
+        "${_snow_msvc_145_root}/lib/${_snow_target_arch}" _snow_has_msvc_libpath)
     if(_snow_has_msvc_libpath EQUAL -1)
         set(CMAKE_${_snow_linker_kind}_LINKER_FLAGS
             "${CMAKE_${_snow_linker_kind}_LINKER_FLAGS} ${_snow_linker_paths}"
@@ -150,6 +155,7 @@ unset(_snow_linker_kind)
 unset(_snow_has_msvc_libpath)
 unset(_snow_msvc_145_root)
 unset(_snow_msvc_145_bin)
+unset(_snow_target_arch)
 unset(_snow_vswhere)
 unset(_snow_vs_install)
 unset(_snow_msvc_candidates)

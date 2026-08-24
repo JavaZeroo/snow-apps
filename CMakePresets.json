@@ -110,6 +110,15 @@
         "SNOW_APPS_PACKAGE_SNOW_SHOT": "OFF",
         "SNOW_RUST_RELEASE_PROFILE": "release-fast"
       }
+    },
+    {
+      "name": "snow-shot-msvc-release-arm64",
+      "displayName": "Snow Shot MSVC Static Qt Release (ARM64)",
+      "inherits": "snow-shot-msvc-release",
+      "architecture": "ARM64",
+      "cacheVariables": {
+        "VCPKG_TARGET_TRIPLET": "arm64-windows-static"
+      }
     }
   ],
   "buildPresets": [
@@ -134,6 +143,12 @@
     {
       "name": "build-snow-shot-msvc-fast",
       "configurePreset": "snow-shot-msvc-fast",
+      "configuration": "Release",
+      "targets": ["snow_shot"]
+    },
+    {
+      "name": "build-snow-shot-msvc-release-arm64",
+      "configurePreset": "snow-shot-msvc-release-arm64",
       "configuration": "Release",
       "targets": ["snow_shot"]
     }
@@ -166,6 +181,11 @@
       "name": "package-snow-shot",
       "configurePreset": "snow-shot-msvc-release",
       "generators": ["NSIS"]
+    },
+    {
+      "name": "package-snow-shot-arm64",
+      "configurePreset": "snow-shot-msvc-release-arm64",
+      "generators": ["NSIS", "ZIP"]
     }
   ]
 }

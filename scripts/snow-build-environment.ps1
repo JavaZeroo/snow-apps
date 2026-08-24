@@ -4,7 +4,15 @@ $script:SnowRepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $script:SnowQtVersion = "6.11.1"
 $script:SnowMsvcToolset = "14.51"
 $script:SnowRustToolchain = "1.97.1"
-$script:SnowRustTarget = "x86_64-pc-windows-msvc"
+$script:SnowRustTargetByArch = @{
+    x64   = "x86_64-pc-windows-msvc"
+    arm64 = "aarch64-pc-windows-msvc"
+}
+
+function Resolve-SnowRustTarget {
+    param([ValidateSet("x64", "arm64")][string]$Arch = "x64")
+    return $script:SnowRustTargetByArch[$Arch]
+}
 
 function Resolve-SnowQtDir {
     param(
@@ -99,6 +107,8 @@ function Set-SnowQtEnvironment {
 }
 
 function Add-SnowMsvcToolsToPath {
+    param([ValidateSet("x64", "arm64")][string]$Arch = "x64")
+
     $vswhereCommand = Get-Command "vswhere.exe" -ErrorAction SilentlyContinue
     $vswhere = @(
         @(
@@ -140,7 +150,10 @@ function Add-SnowMsvcToolsToPath {
     }
 
     $env:VCToolsInstallDir = "$($msvcTools.FullName)\"
-    $msvcBin = Join-Path $msvcTools.FullName "bin\Hostx64\x64"
+    $msvcBin = Join-Path $msvcTools.FullName "bin\Hostx64\$Arch"
+    if (-not (Test-Path -LiteralPath (Join-Path $msvcBin "cl.exe") -PathType Leaf)) {
+        throw "MSVC $Arch cross tools were not found under $msvcBin. Install the Visual Studio MSVC $Arch component."
+    }
     $env:Path = "$msvcBin;$env:Path"
 
     $sdkRoot = $env:WindowsSdkDir
@@ -160,7 +173,7 @@ function Add-SnowMsvcToolsToPath {
     }
     $env:WindowsSdkDir = "$([System.IO.Path]::GetFullPath($sdkRoot))\"
     $env:WindowsSDKVersion = "$sdkVersion\"
-    $sdkBin = Join-Path $env:WindowsSdkDir "bin\$sdkVersion\x64"
+    $sdkBin = Join-Path $env:WindowsSdkDir "bin\$sdkVersion\$Arch"
     if (-not (Test-Path -LiteralPath (Join-Path $sdkBin "rc.exe") -PathType Leaf)) {
         throw "Windows SDK resource compiler was not found under $sdkBin."
     }
@@ -175,19 +188,22 @@ function Add-SnowMsvcToolsToPath {
         (Join-Path $sdkIncludeRoot "cppwinrt")
     ) -join ";"
     $env:LIB = @(
-        (Join-Path $msvcTools.FullName "lib\x64"),
-        (Join-Path $env:WindowsSdkDir "Lib\$sdkVersion\um\x64"),
-        (Join-Path $env:WindowsSdkDir "Lib\$sdkVersion\ucrt\x64")
+        (Join-Path $msvcTools.FullName "lib\$Arch"),
+        (Join-Path $env:WindowsSdkDir "Lib\$sdkVersion\um\$Arch"),
+        (Join-Path $env:WindowsSdkDir "Lib\$sdkVersion\ucrt\$Arch")
     ) -join ";"
     return $msvcBin
 }
 
 function Set-SnowBuildEnvironment {
-    param([string]$Preset = "")
+    param(
+        [string]$Preset = "",
+        [ValidateSet("x64", "arm64")][string]$Arch = "x64"
+    )
 
     $qtDir = Set-SnowQtEnvironment -Preset $Preset
     $env:VCPKG_ROOT = Join-Path $script:SnowRepoRoot ".tools\vcpkg"
-    Add-SnowMsvcToolsToPath | Out-Null
+    Add-SnowMsvcToolsToPath -Arch $Arch | Out-Null
     $libclang = Join-Path $script:SnowRepoRoot ".tools\llvm\bin"
     if (Test-Path -LiteralPath (Join-Path $libclang "libclang.dll") -PathType Leaf) {
         $env:LIBCLANG_PATH = $libclang
@@ -199,16 +215,22 @@ function Set-SnowBuildEnvironment {
         QtVersion = $script:SnowQtVersion
         MsvcToolset = $script:SnowMsvcToolset
         RustToolchain = $script:SnowRustToolchain
-        RustTarget = $script:SnowRustTarget
+        RustTarget = (Resolve-SnowRustTarget -Arch $Arch)
         VcpkgRoot = $env:VCPKG_ROOT
     }
 }
 
 function Resolve-SnowPreset {
-    param([ValidateSet("Debug", "Release", "Performance", "Fast")][string]$Configuration)
+    param(
+        [ValidateSet("Debug", "Release", "Performance", "Fast")][string]$Configuration,
+        [ValidateSet("x64", "arm64")][string]$Arch = "x64"
+    )
+    if ($Arch -eq "arm64" -and $Configuration -ne "Release") {
+        throw "Only the Release configuration has an arm64 preset."
+    }
     switch ($Configuration) {
         "Debug" { return "windows-msvc-debug" }
-        "Release" { return "snow-shot-msvc-release" }
+        "Release" { if ($Arch -eq "arm64") { return "snow-shot-msvc-release-arm64" } else { return "snow-shot-msvc-release" } }
         "Performance" { return "windows-msvc-performance" }
         "Fast" { return "snow-shot-msvc-fast" }
     }
@@ -232,14 +254,18 @@ function Test-SnowCacheAlignment {
     if (-not (Test-Path -LiteralPath $CachePath -PathType Leaf)) { return $false }
     $cache = Get-Content -LiteralPath $CachePath -Raw
     $qtNeedle = [regex]::Escape(($env:SNOW_QT_STATIC_DIR -replace '\\', '/'))
-    $expectedTriplet = if ($Preset -in @("snow-shot-msvc-release", "snow-shot-msvc-fast")) {
+    $staticPresets = @("snow-shot-msvc-release", "snow-shot-msvc-fast", "snow-shot-msvc-release-arm64")
+    $expectedTriplet = if ($Preset -eq "snow-shot-msvc-release-arm64") {
+        "arm64-windows-static"
+    }
+    elseif ($Preset -in $staticPresets) {
         "x64-windows-static"
     }
     else {
         "x64-windows"
     }
     $qtAligned = $cache -match "(?m)^Qt6_DIR:PATH=$qtNeedle$"
-    if ($Preset -in @("snow-shot-msvc-release", "snow-shot-msvc-fast")) {
+    if ($Preset -in $staticPresets) {
         $qtAligned = $qtAligned -and $cache -match '(?m)^SNOW_QT_STATIC_DIR:PATH='
     }
     return $qtAligned -and

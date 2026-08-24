@@ -3,6 +3,8 @@ param(
     [string]$Qt6Dir = "",
     [ValidateSet("Dynamic", "Static")]
     [string[]]$VcpkgVariants = @("Dynamic", "Static"),
+    [ValidateSet("x64", "arm64")]
+    [string]$Arch = "x64",
     [switch]$Reset,
     [switch]$SkipVcpkgInstall,
     [switch]$SkipDependencyInstall
@@ -48,7 +50,7 @@ $vcpkgInstalledRoot = Join-Path $vcpkgRoot "installed"
 # newer snapshots require an unsupported manifest-tool schema or bundled CMake 4.4+.
 $vcpkgBaseline = "4497409a47f19db373a410a0efb84eca4747adbf"
 $rustToolchain = "1.97.1"
-$rustTarget = "x86_64-pc-windows-msvc"
+$rustTarget = Resolve-SnowRustTarget -Arch $Arch
 
 # Resolve and export one validated Qt kit before any bootstrap work. Environment
 # variables often outlive a Qt upgrade, so each candidate is version-checked.
@@ -62,7 +64,7 @@ $rustup = Require-Command "rustup"
 # vcpkg's app-local packaging invokes dumpbin to discover DLL dependencies of
 # host tools. Without the MSVC bin directory, it can install unusable tools and
 # still record their packages as successfully installed.
-Add-SnowMsvcToolsToPath | Out-Null
+Add-SnowMsvcToolsToPath -Arch $Arch | Out-Null
 Require-Command "dumpbin" | Out-Null
 
 $cmakeVersionLine = (& $cmake.Source --version | Select-Object -First 1)
@@ -173,7 +175,7 @@ if (-not $SkipDependencyInstall) {
         throw "Repository-local vcpkg is not installed. Rerun without -SkipVcpkgInstall."
     }
     foreach ($variant in $VcpkgVariants) {
-        $triplet = if ($variant -eq "Static") { "x64-windows-static" } else { "x64-windows" }
+        $triplet = if ($variant -eq "Static") { "$Arch-windows-static" } else { "$Arch-windows" }
         $installVariant = $variant.ToLowerInvariant()
         $tripletInstallRoot = Join-Path $vcpkgInstalledRoot $installVariant
         $overlayPortArguments = @(Get-ChildItem -LiteralPath (Join-Path $repoRoot "cmake/vcpkg-overlay-ports") -Directory |

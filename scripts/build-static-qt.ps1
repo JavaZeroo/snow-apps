@@ -4,7 +4,12 @@ param(
     [Parameter(Mandatory = $true)][string]$InstallPrefix,
     [string]$SourceDirectory = "",
     [ValidateSet("Debug", "Release")][string]$Configuration = "Release",
-    [string]$QtMirrorBaseUrl = "https://qt.mirror.constant.com/official_releases"
+    [string]$QtMirrorBaseUrl = "https://qt.mirror.constant.com/official_releases",
+    # Required when cross-compiling (e.g. building for ARM64 from an x64
+    # host): points at a Qt install already built for the host architecture,
+    # so qtbase can run moc/rcc/uic during the build instead of the
+    # not-yet-built, non-executable target-architecture copies.
+    [string]$ExternalHostBinDir = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -179,6 +184,13 @@ $configureArguments = @(
     "-skip", "qtwebsockets",
     "-skip", "qtwebview"
 )
+if (-not [string]::IsNullOrWhiteSpace($ExternalHostBinDir)) {
+    $externalHostBinDir = [System.IO.Path]::GetFullPath($ExternalHostBinDir)
+    if (-not (Test-Path -LiteralPath (Join-Path $externalHostBinDir "moc.exe") -PathType Leaf)) {
+        throw "ExternalHostBinDir does not contain a host Qt toolchain: $externalHostBinDir"
+    }
+    $configureArguments += @("-external-hostbindir", $externalHostBinDir)
+}
 Invoke-Checked -Command (Join-Path $sourceDirectory "configure.bat") -Arguments $configureArguments -WorkingDirectory $sourceDirectory
 $buildFile = Join-Path $sourceDirectory "build.ninja"
 if (-not (Test-Path -LiteralPath $buildFile -PathType Leaf)) {

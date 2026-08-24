@@ -1,14 +1,28 @@
 [CmdletBinding()]
 param(
-    [string]$BuildDirectory = "build\snow-shot-msvc-release",
-    [string]$InstallDirectory = "artifacts\snow-shot",
+    [string]$BuildDirectory = "",
+    [string]$InstallDirectory = "",
+    [ValidateSet("x64", "arm64")]
+    [string]$Architecture = "x64",
+    [switch]$IncludePortable,
     [switch]$SkipBuild
 )
 
 $ErrorActionPreference = "Stop"
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 . (Join-Path $PSScriptRoot "snow-build-environment.ps1")
-$buildEnvironment = Set-SnowBuildEnvironment -Preset "snow-shot-msvc-release"
+$preset = Resolve-SnowPreset -Configuration Release -Arch $Architecture
+$buildPreset = "build-$preset"
+if ([string]::IsNullOrWhiteSpace($BuildDirectory)) {
+    $BuildDirectory = "build\$preset"
+}
+if ([string]::IsNullOrWhiteSpace($InstallDirectory)) {
+    $InstallDirectory = if ($Architecture -eq "arm64") { "artifacts\snow-shot-arm64" } else { "artifacts\snow-shot" }
+}
+$buildEnvironment = Set-SnowBuildEnvironment -Preset $preset -Arch $Architecture
+# The x64-hosted dumpbin.exe can inspect PE binaries of any target
+# architecture; it is always present since the ARM64 cross tools are an
+# addition to, not a replacement for, the x64 host toolset.
 $script:DumpbinPath = Join-Path $env:VCToolsInstallDir "bin\Hostx64\x64\dumpbin.exe"
 if (-not (Test-Path -LiteralPath $script:DumpbinPath -PathType Leaf)) {
     throw "The x64 PE inspection tool was not found: $script:DumpbinPath"
@@ -53,7 +67,7 @@ if (-not $installDirectory.StartsWith($artifactPrefix, [System.StringComparison]
 
 $cachePath = Join-Path $buildDirectory "CMakeCache.txt"
 if (-not $SkipBuild) {
-    & cmake --fresh --preset snow-shot-msvc-release
+    & cmake --fresh --preset $preset
     if ($LASTEXITCODE -ne 0) {
         throw "Snow Shot release configuration failed."
     }
@@ -78,7 +92,7 @@ foreach ($entry in $requiredCacheEntries) {
 }
 
 if (-not $SkipBuild) {
-    & cmake --build --preset build-snow-shot-msvc-release --parallel
+    & cmake --build --preset $buildPreset --parallel
     if ($LASTEXITCODE -ne 0) {
         throw "Snow Shot release build failed."
     }
@@ -249,15 +263,16 @@ if ($versionInfo.FileVersion -ne "$packageVersion.0" -or
     throw "Snow Shot binary version '$($versionInfo.FileVersion)'/'$($versionInfo.ProductVersion)' does not match package version '$packageVersion'."
 }
 
+$cpackGenerators = if ($IncludePortable) { "NSIS;ZIP" } else { "NSIS" }
 Push-Location $buildDirectory
 try {
-    & cpack --config $cpackConfig -G NSIS -C Release
+    & cpack --config $cpackConfig -G $cpackGenerators -C Release
 }
 finally {
     Pop-Location
 }
 if ($LASTEXITCODE -ne 0) {
-    throw "NSIS packaging failed."
+    throw "CPack packaging failed."
 }
 
 $packages = @(Get-ChildItem -LiteralPath $buildDirectory -File -Filter "snow-shot-*.exe" |
@@ -273,7 +288,7 @@ $expectedInstallerMetadata = @{
     FileVersion = "$packageVersion.0"
     InternalName = "snow-shot-installer"
     LegalCopyright = "Copyright (C) 2026 mg-chao"
-    OriginalFilename = "snow-shot-$packageVersion-windows-x64.exe"
+    OriginalFilename = "snow-shot-$packageVersion-windows-$Architecture.exe"
     ProductName = "Snow Shot"
     ProductVersion = $packageVersion
 }
@@ -291,3 +306,18 @@ if (-not (Test-Path -LiteralPath $checksumPath -PathType Leaf)) {
 Write-Output "Snow Shot install tree: $installDirectory"
 Write-Output "Snow Shot installer: $($packages[-1].FullName)"
 Write-Output "Snow Shot installer checksum: $checksumPath"
+
+if ($IncludePortable) {
+    $portablePackages = @(Get-ChildItem -LiteralPath $buildDirectory -File -Filter "snow-shot-*.zip" |
+        Sort-Object LastWriteTime)
+    if ($portablePackages.Count -eq 0) {
+        throw "CPack did not produce a Snow Shot portable package under $buildDirectory"
+    }
+    $portablePackage = $portablePackages[-1]
+    $portableChecksumPath = "$($portablePackage.FullName).sha256"
+    if (-not (Test-Path -LiteralPath $portableChecksumPath -PathType Leaf)) {
+        throw "CPack did not produce the portable package checksum: $portableChecksumPath"
+    }
+    Write-Output "Snow Shot portable package: $($portablePackage.FullName)"
+    Write-Output "Snow Shot portable package checksum: $portableChecksumPath"
+}
