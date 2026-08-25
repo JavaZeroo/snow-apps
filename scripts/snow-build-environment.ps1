@@ -96,11 +96,13 @@ function Set-SnowQtEnvironment {
     $env:SNOW_QT_STATIC_DIR = $qtDir
     $env:Qt6_DIR = $qtDir
     $env:QTDIR = [System.IO.Path]::GetFullPath((Join-Path $qtDir "..\..\.."))
-    # Qt installations commonly add their MinGW toolchain to PATH. That
-    # compiler is incompatible with this project's MSVC-only triplets and
-    # causes CMake to select gcc for OpenCV's MASM/GNU assembly sources.
+    # Qt installations bundle a MinGW toolchain, and CI images often ship a
+    # standalone one (C:\mingw64, msys64). That compiler is incompatible with
+    # this project's MSVC-only triplets and causes CMake to select gcc for
+    # OpenCV's MLAS GNU assembly sources, which the GNU assembler then
+    # rejects. Drop every MinGW directory, not just the one Qt bundles.
     $env:Path = @($env:Path -split ';' | Where-Object {
-        $_ -and $_ -notmatch '(?i)[\\/]Qt[\\/]Tools[\\/]mingw[^\\/]*([\\/]bin)?$'
+        $_ -and $_ -notmatch '(?i)(^|[\\/])mingw[^\\/]*([\\/]|$)'
     }) -join ';'
     $env:Path = "$(Join-Path $env:QTDIR 'bin');$env:Path"
     return $qtDir

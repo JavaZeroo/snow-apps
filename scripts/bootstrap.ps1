@@ -67,6 +67,16 @@ $rustup = Require-Command "rustup"
 Add-SnowMsvcToolsToPath -Arch $Arch | Out-Null
 Require-Command "dumpbin" | Out-Null
 
+# CMake picks an assembler for OpenCV's MLAS sources by searching PATH, and a
+# GNU compiler there wins over MSVC and then fails to assemble them. That
+# surfaces hours into the opencv4 build, so reject it up front instead.
+$gnuCompiler = @("cc", "gcc") |
+    ForEach-Object { Get-Command $_ -CommandType Application -ErrorAction SilentlyContinue } |
+    Select-Object -First 1
+if ($gnuCompiler) {
+    throw "A GNU compiler is on PATH and would be selected to assemble OpenCV's MLAS sources: $($gnuCompiler.Source). Remove its directory from PATH before bootstrapping."
+}
+
 $cmakeVersionLine = (& $cmake.Source --version | Select-Object -First 1)
 if ($cmakeVersionLine -notmatch "cmake version (\d+)\.(\d+)") {
     throw "Unable to determine the installed CMake version: $cmakeVersionLine"
