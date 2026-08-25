@@ -40,6 +40,28 @@ jobs:
           choco install nsis --yes --no-progress
           if ($LASTEXITCODE -ne 0) { throw "NSIS installation failed." }
 
+      # snow-ocr-c embeds these models with include_bytes!, but they are
+      # gitignored and fetched on demand, so the Rust build fails without
+      # them. Cached because they come from a single upstream host.
+      - name: Restore OCR model assets
+        id: ocr-models
+        uses: actions/cache/restore@v4
+        with:
+          path: snow-crates/crates/snow-ocr-c/assets/ppocrv6-small
+          key: snow-ocr-models-${{ hashFiles('snow-crates/crates/snow-ocr-c/scripts/download_models.ps1') }}
+
+      - name: Download OCR model assets
+        if: steps.ocr-models.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: .\snow-crates\crates\snow-ocr-c\scripts\download_models.ps1
+
+      - name: Save OCR model assets
+        if: steps.ocr-models.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: snow-crates/crates/snow-ocr-c/assets/ppocrv6-small
+          key: snow-ocr-models-${{ hashFiles('snow-crates/crates/snow-ocr-c/scripts/download_models.ps1') }}
+
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -165,6 +187,27 @@ jobs:
         run: |
           choco install nsis --yes --no-progress
           if ($LASTEXITCODE -ne 0) { throw "NSIS installation failed." }
+
+      # Same embedded OCR models as the x64 job; they are plain data, so one
+      # download serves either target architecture.
+      - name: Restore OCR model assets
+        id: ocr-models
+        uses: actions/cache/restore@v4
+        with:
+          path: snow-crates/crates/snow-ocr-c/assets/ppocrv6-small
+          key: snow-ocr-models-${{ hashFiles('snow-crates/crates/snow-ocr-c/scripts/download_models.ps1') }}
+
+      - name: Download OCR model assets
+        if: steps.ocr-models.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: .\snow-crates\crates\snow-ocr-c\scripts\download_models.ps1
+
+      - name: Save OCR model assets
+        if: steps.ocr-models.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: snow-crates/crates/snow-ocr-c/assets/ppocrv6-small
+          key: snow-ocr-models-${{ hashFiles('snow-crates/crates/snow-ocr-c/scripts/download_models.ps1') }}
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
