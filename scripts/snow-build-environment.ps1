@@ -96,13 +96,29 @@ function Set-SnowQtEnvironment {
     $env:SNOW_QT_STATIC_DIR = $qtDir
     $env:Qt6_DIR = $qtDir
     $env:QTDIR = [System.IO.Path]::GetFullPath((Join-Path $qtDir "..\..\.."))
-    # Qt installations bundle a MinGW toolchain, and CI images often ship a
-    # standalone one (C:\mingw64, msys64). That compiler is incompatible with
-    # this project's MSVC-only triplets and causes CMake to select gcc for
-    # OpenCV's MLAS GNU assembly sources, which the GNU assembler then
-    # rejects. Drop every MinGW directory, not just the one Qt bundles.
+    # CMake picks an assembler for OpenCV's MLAS sources by searching PATH,
+    # prefers a GNU driver over MSVC, and the GNU assembler then rejects
+    # them. Those drivers hide in directories whose names give no hint of
+    # it: Qt bundles MinGW, and CI images ship GNU compilers under
+    # C:\mingw64, Strawberry Perl, and Git for Windows. So drop the entries
+    # that actually carry one instead of guessing from directory names.
+    # Sibling entries survive, keeping tools like Strawberry's perl.exe
+    # usable.
+    $gnuCompilerDrivers = @("cc.exe", "gcc.exe", "g++.exe")
     $env:Path = @($env:Path -split ';' | Where-Object {
-        $_ -and $_ -notmatch '(?i)(^|[\\/])mingw[^\\/]*([\\/]|$)'
+        $entry = $_
+        if ([string]::IsNullOrWhiteSpace($entry)) { return $false }
+        foreach ($driver in $gnuCompilerDrivers) {
+            try {
+                if (Test-Path -LiteralPath (Join-Path $entry $driver) -PathType Leaf) {
+                    return $false
+                }
+            }
+            catch {
+                # An unusable PATH entry cannot supply a compiler either.
+            }
+        }
+        return $true
     }) -join ';'
     $env:Path = "$(Join-Path $env:QTDIR 'bin');$env:Path"
     return $qtDir

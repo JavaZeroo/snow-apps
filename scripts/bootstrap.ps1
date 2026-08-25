@@ -70,7 +70,7 @@ Require-Command "dumpbin" | Out-Null
 # CMake picks an assembler for OpenCV's MLAS sources by searching PATH, and a
 # GNU compiler there wins over MSVC and then fails to assemble them. That
 # surfaces hours into the opencv4 build, so reject it up front instead.
-$gnuCompiler = @("cc", "gcc") |
+$gnuCompiler = @("cc", "gcc", "g++") |
     ForEach-Object { Get-Command $_ -CommandType Application -ErrorAction SilentlyContinue } |
     Select-Object -First 1
 if ($gnuCompiler) {
