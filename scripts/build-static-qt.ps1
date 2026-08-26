@@ -221,7 +221,9 @@ if (-not (Test-Path -LiteralPath $qtCmakeCache -PathType Leaf)) {
 }
 $qtCacheText = Get-Content -LiteralPath $qtCmakeCache -Raw
 foreach ($driver in @("psql", "mysql", "odbc", "oci", "db2", "ibase", "mimer")) {
-    if ($qtCacheText -notmatch "(?m)^FEATURE_sql_$driver(:[^=]*)?=(OFF|FALSE|0)$") {
+    # CMakeCache.txt uses CRLF, and in multiline mode $ anchors before the
+    # \n with the \r still in the way, so match it explicitly.
+    if ($qtCacheText -notmatch "(?m)^FEATURE_sql_$driver(:[^=]*)?=(OFF|FALSE|0)\r?$") {
         $observed = @([regex]::Matches($qtCacheText, "(?m)^FEATURE_sql_.*$") |
             ForEach-Object { $_.Value }) -join "; "
         throw ("Qt configure left the $driver SQL driver enabled, so -no-feature-sql-$driver " +
