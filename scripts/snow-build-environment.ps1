@@ -173,6 +173,15 @@ function Add-SnowMsvcToolsToPath {
         throw "MSVC $Arch cross tools were not found under $msvcBin. Install the Visual Studio MSVC $Arch component."
     }
     $env:Path = "$msvcBin;$env:Path"
+    if ($Arch -ne "x64") {
+        # The cross tools are x64 binaries that load their shared DLLs from the
+        # host bin directory, so it has to stay reachable behind them.
+        $hostMsvcBin = Join-Path $msvcTools.FullName "bin\Hostx64\x64"
+        if (-not (Test-Path -LiteralPath (Join-Path $hostMsvcBin "cl.exe") -PathType Leaf)) {
+            throw "MSVC x64 host tools were not found under $hostMsvcBin, but the $Arch cross tools need them."
+        }
+        $env:Path = "$env:Path;$hostMsvcBin"
+    }
 
     $sdkRoot = $env:WindowsSdkDir
     $sdkVersion = $env:WindowsSDKVersion
@@ -191,7 +200,11 @@ function Add-SnowMsvcToolsToPath {
     }
     $env:WindowsSdkDir = "$([System.IO.Path]::GetFullPath($sdkRoot))\"
     $env:WindowsSDKVersion = "$sdkVersion\"
-    $sdkBin = Join-Path $env:WindowsSdkDir "bin\$sdkVersion\$Arch"
+    # The SDK names its bin subdirectories after the architecture the tool
+    # itself runs on, unlike MSVC's bin\Hostx64\<target> above. rc.exe and
+    # mt.exe run on this host, so take the x64 copies even when cross
+    # compiling; the arm64 ones cannot execute here.
+    $sdkBin = Join-Path $env:WindowsSdkDir "bin\$sdkVersion\x64"
     if (-not (Test-Path -LiteralPath (Join-Path $sdkBin "rc.exe") -PathType Leaf)) {
         throw "Windows SDK resource compiler was not found under $sdkBin."
     }

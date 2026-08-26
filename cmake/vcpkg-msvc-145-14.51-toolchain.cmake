@@ -56,6 +56,12 @@ if(DEFINED VCPKG_TARGET_ARCHITECTURE AND NOT VCPKG_TARGET_ARCHITECTURE STREQUAL 
 else()
     set(_snow_target_arch "x64")
 endif()
+# bin/HostX64/<target> holds the compiler and linker: x64-hosted, emitting
+# code for <target>. The Windows SDK instead names its bin subdirectories
+# after the architecture the tool itself runs on, so rc.exe and mt.exe below
+# come from the x64 directory even on a cross build -- the arm64 copies of
+# those cannot execute on this host, and rc.exe only reported "unknown error".
+set(_snow_host_arch "x64")
 set(_snow_msvc_145_bin "${_snow_msvc_145_root}/bin/HostX64/${_snow_target_arch}")
 set(CMAKE_C_COMPILER "${_snow_msvc_145_bin}/cl.exe" CACHE FILEPATH "" FORCE)
 set(CMAKE_CXX_COMPILER "${_snow_msvc_145_bin}/cl.exe" CACHE FILEPATH "" FORCE)
@@ -81,9 +87,9 @@ endif()
 if(_snow_windows_sdk_root STREQUAL "" OR NOT IS_DIRECTORY "${_snow_windows_sdk_include}")
     message(FATAL_ERROR "Windows 10 SDK was not found. Set WindowsSdkDir/WindowsSDKVersion or install a Windows SDK.")
 endif()
-set(CMAKE_MT "${_snow_windows_sdk_root}/bin/${_snow_windows_sdk_version}/${_snow_target_arch}/mt.exe"
+set(CMAKE_MT "${_snow_windows_sdk_root}/bin/${_snow_windows_sdk_version}/${_snow_host_arch}/mt.exe"
     CACHE FILEPATH "" FORCE)
-set(CMAKE_RC_COMPILER "${_snow_windows_sdk_root}/bin/${_snow_windows_sdk_version}/${_snow_target_arch}/rc.exe"
+set(CMAKE_RC_COMPILER "${_snow_windows_sdk_root}/bin/${_snow_windows_sdk_version}/${_snow_host_arch}/rc.exe"
     CACHE FILEPATH "" FORCE)
 set(_snow_include_directories
     "${_snow_msvc_145_root}/include"
@@ -156,6 +162,7 @@ unset(_snow_has_msvc_libpath)
 unset(_snow_msvc_145_root)
 unset(_snow_msvc_145_bin)
 unset(_snow_target_arch)
+unset(_snow_host_arch)
 unset(_snow_vswhere)
 unset(_snow_vs_install)
 unset(_snow_msvc_candidates)
