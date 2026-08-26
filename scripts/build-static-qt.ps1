@@ -158,6 +158,19 @@ $configureArguments = @(
     "-prefix", $installPrefix,
     "-nomake", "tests",
     "-nomake", "examples",
+    # Qt probes Program Files for database client libraries and links
+    # whatever it finds, which on a cross build means host-architecture
+    # import libraries: an x64 libpq.lib pulled into the ARM64 build failed
+    # with 33 unresolved externals after an hour of compiling. Snow Shot
+    # uses no Qt SQL driver, so turn off every one that needs an external
+    # client library. sqlite stays: it is bundled, and qthelp needs it.
+    "-no-feature-sql-psql",
+    "-no-feature-sql-mysql",
+    "-no-feature-sql-odbc",
+    "-no-feature-sql-oci",
+    "-no-feature-sql-db2",
+    "-no-feature-sql-ibase",
+    "-no-feature-sql-mimer",
     "-skip", "qt3d",
     "-skip", "qtactiveqt",
     "-skip", "qtandroidextras",
@@ -197,6 +210,25 @@ $buildFile = Join-Path $sourceDirectory "build.ninja"
 if (-not (Test-Path -LiteralPath $buildFile -PathType Leaf)) {
     throw "Qt configure did not produce $buildFile. Review the configure output above."
 }
+
+# configure ignores a feature it does not recognise, and an SQL driver left
+# on only fails when its host-architecture import library reaches the
+# linker, an hour into the build. Confirm against the generated cache
+# instead, while a mistake still costs minutes.
+$qtCmakeCache = Join-Path $sourceDirectory "CMakeCache.txt"
+if (-not (Test-Path -LiteralPath $qtCmakeCache -PathType Leaf)) {
+    throw "Qt configure did not produce $qtCmakeCache"
+}
+$qtCacheText = Get-Content -LiteralPath $qtCmakeCache -Raw
+foreach ($driver in @("psql", "mysql", "odbc", "oci", "db2", "ibase", "mimer")) {
+    if ($qtCacheText -notmatch "(?m)^FEATURE_sql_$driver(:[^=]*)?=(OFF|FALSE|0)$") {
+        $observed = @([regex]::Matches($qtCacheText, "(?m)^FEATURE_sql_.*$") |
+            ForEach-Object { $_.Value }) -join "; "
+        throw ("Qt configure left the $driver SQL driver enabled, so -no-feature-sql-$driver " +
+            "was not applied. FEATURE_sql_* entries in the cache: $observed")
+    }
+}
+
 Invoke-Checked -Command "cmake" -Arguments @("--build", ".", "--parallel") -WorkingDirectory $sourceDirectory
 Invoke-Checked -Command "cmake" -Arguments @("--install", ".") -WorkingDirectory $sourceDirectory
 
