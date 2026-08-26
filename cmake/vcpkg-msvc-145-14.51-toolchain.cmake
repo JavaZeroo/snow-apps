@@ -104,7 +104,19 @@ set(_snow_library_directories
     "${_snow_windows_sdk_root}/Lib/${_snow_windows_sdk_version}/ucrt/${_snow_target_arch}")
 set(_snow_include_flags "")
 set(_snow_rc_include_flags "")
+# link_directories() is a CMake directory property, so it never reaches
+# CMAKE_*_LINKER_FLAGS -- and therefore never reaches the flags vcpkg detects
+# from this toolchain and hands to ports that drive cl.exe and link.exe
+# themselves. ffmpeg builds its ldflags.rsp from exactly those, so its
+# configure link test failed with "cannot open file 'LIBCMT.lib'": on x64 the
+# shell's %LIB% happened to cover it, but the cross build deliberately does not
+# pass LIB through, because the value it would carry is the host's. Put the
+# target library directories in the flags instead, so they travel with the
+# toolchain rather than with the environment.
 set(_snow_linker_paths "")
+foreach(_snow_library_directory IN LISTS _snow_library_directories)
+    string(APPEND _snow_linker_paths " /LIBPATH:\"${_snow_library_directory}\"")
+endforeach()
 set(CMAKE_C_STANDARD_INCLUDE_DIRECTORIES "${_snow_include_directories}" CACHE STRING "" FORCE)
 set(CMAKE_CXX_STANDARD_INCLUDE_DIRECTORIES "${_snow_include_directories}" CACHE STRING "" FORCE)
 set(CMAKE_RC_STANDARD_INCLUDE_DIRECTORIES "${_snow_include_directories}" CACHE STRING "" FORCE)
@@ -154,6 +166,8 @@ unset(_snow_sdk_libpath)
 unset(_snow_include_flags)
 unset(_snow_rc_include_flags)
 unset(_snow_linker_paths)
+unset(_snow_library_directory)
+unset(_snow_library_directories)
 unset(_snow_language)
 unset(_snow_has_msvc_include)
 unset(_snow_has_rc_msvc_include)
