@@ -163,7 +163,12 @@ jobs:
 
   build-and-release-arm64:
     name: Build and draft Snow Shot release (ARM64)
-    needs: build-and-release
+    # Deliberately not `needs: build-and-release`. The two jobs share no
+    # mutable state -- their Rust and Qt caches use different keys, and only
+    # this job writes the ARM64 kit -- so serialising them just added the x64
+    # job's ~3h to every ARM64 iteration. Ordering only matters on tag runs,
+    # where the x64 job creates the draft release this one uploads into; the
+    # upload step waits for that draft itself.
     runs-on: windows-2025-vs2026
     env:
       VCPKG_BINARY_SOURCES: clear;x-gha,readwrite
@@ -311,4 +316,14 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $assets = "${{ steps.package.outputs.assets }}" -split "`n" | Where-Object { $_ }
+          # The x64 job creates the draft release and runs in parallel with
+          # this one, so it may not have got there yet. Wait rather than fail.
+          $deadline = (Get-Date).AddMinutes(90)
+          while (-not (gh release view $env:GITHUB_REF_NAME 2>$null)) {
+            if ((Get-Date) -gt $deadline) {
+              throw "Draft release $env:GITHUB_REF_NAME never appeared; the x64 job likely failed."
+            }
+            Write-Host "Waiting for the x64 job to create draft release $env:GITHUB_REF_NAME..."
+            Start-Sleep -Seconds 30
+          }
           gh release upload $env:GITHUB_REF_NAME @assets --clobber
