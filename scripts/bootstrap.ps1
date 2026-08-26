@@ -64,7 +64,14 @@ $rustup = Require-Command "rustup"
 # vcpkg's app-local packaging invokes dumpbin to discover DLL dependencies of
 # host tools. Without the MSVC bin directory, it can install unusable tools and
 # still record their packages as successfully installed.
-Add-SnowMsvcToolsToPath -Arch $Arch | Out-Null
+#
+# This is deliberately the HOST toolchain even when building for arm64. The
+# host triplet passes PATH, INCLUDE and LIB straight through to ports like
+# pkgconf that are compiled to run on this machine, so they need the x64
+# libraries; pointing these at arm64 made meson report that the x64 cl.exe
+# "cannot compile programs". The arm64 triplet passes none of the three, so
+# vcpkg derives the target environment for the arm64 ports itself.
+Add-SnowMsvcToolsToPath | Out-Null
 Require-Command "dumpbin" | Out-Null
 
 # CMake picks an assembler for OpenCV's MLAS sources by searching PATH, and a
