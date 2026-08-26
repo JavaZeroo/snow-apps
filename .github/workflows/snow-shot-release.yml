@@ -259,7 +259,7 @@ jobs:
           $targetPrefix = Join-Path $env:RUNNER_TOOL_CACHE "snow-qt\6.11.1\msvc2026_arm64-static"
           $targetQtDir = Join-Path $targetPrefix "lib\cmake\Qt6"
           if (-not (Test-Path -LiteralPath (Join-Path $targetQtDir "Qt6Config.cmake") -PathType Leaf)) {
-            & "$env:GITHUB_WORKSPACE\scripts\build-static-qt.ps1" -QtVersion 6.11.1 -InstallPrefix $targetPrefix -ExternalHostBinDir (Join-Path $hostPrefix "bin")
+            & "$env:GITHUB_WORKSPACE\scripts\build-static-qt.ps1" -QtVersion 6.11.1 -InstallPrefix $targetPrefix -HostQtPath $hostPrefix
             if ($LASTEXITCODE -ne 0) { throw "Static Qt ARM64 cross build failed." }
           }
           if (-not (Test-Path -LiteralPath (Join-Path $targetQtDir "Qt6Config.cmake") -PathType Leaf)) {

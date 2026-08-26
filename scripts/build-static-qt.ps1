@@ -6,10 +6,11 @@ param(
     [ValidateSet("Debug", "Release")][string]$Configuration = "Release",
     [string]$QtMirrorBaseUrl = "https://qt.mirror.constant.com/official_releases",
     # Required when cross-compiling (e.g. building for ARM64 from an x64
-    # host): points at a Qt install already built for the host architecture,
-    # so qtbase can run moc/rcc/uic during the build instead of the
-    # not-yet-built, non-executable target-architecture copies.
-    [string]$ExternalHostBinDir = ""
+    # host): the install prefix of a Qt already built for the host
+    # architecture, so qtbase can run moc/rcc/uic during the build instead of
+    # the not-yet-built, non-executable target-architecture copies. Qt 6
+    # spells this -qt-host-path and wants the prefix, not its bin directory.
+    [string]$HostQtPath = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -184,12 +185,12 @@ $configureArguments = @(
     "-skip", "qtwebsockets",
     "-skip", "qtwebview"
 )
-if (-not [string]::IsNullOrWhiteSpace($ExternalHostBinDir)) {
-    $externalHostBinDir = [System.IO.Path]::GetFullPath($ExternalHostBinDir)
-    if (-not (Test-Path -LiteralPath (Join-Path $externalHostBinDir "moc.exe") -PathType Leaf)) {
-        throw "ExternalHostBinDir does not contain a host Qt toolchain: $externalHostBinDir"
+if (-not [string]::IsNullOrWhiteSpace($HostQtPath)) {
+    $hostQtPath = [System.IO.Path]::GetFullPath($HostQtPath)
+    if (-not (Test-Path -LiteralPath (Join-Path $hostQtPath "bin\moc.exe") -PathType Leaf)) {
+        throw "HostQtPath is not a Qt install prefix with host tools: $hostQtPath"
     }
-    $configureArguments += @("-external-hostbindir", $externalHostBinDir)
+    $configureArguments += @("-qt-host-path", $hostQtPath)
 }
 Invoke-Checked -Command (Join-Path $sourceDirectory "configure.bat") -Arguments $configureArguments -WorkingDirectory $sourceDirectory
 $buildFile = Join-Path $sourceDirectory "build.ninja"
