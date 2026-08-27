@@ -153,6 +153,42 @@ if(SNOW_SHOT_RELEASE_STATIC)
     # x64/<runtime>/staticlib target files instead of the shared-library set.
     set(OpenCV_STATIC ON)
 endif()
+# OpenCV keeps its real CMake package under share/opencv4/<arch>/<runtime>/ and
+# leaves a dispatcher at share/opencv4 that recomputes <arch> from the consuming
+# project. On a cross build the two disagree: vcpkg builds the port with Ninja,
+# where OpenCV sees no generator platform and files the ARM64 build under "x64",
+# while this project configures with the Visual Studio generator and the
+# dispatcher looks for "ARM64". It then reports "Found OpenCV Windows Pack but it
+# has no binaries compatible with your configuration" and advises pointing
+# OpenCV_DIR at the real build, which is what this does. The guard keeps the
+# native builds on their existing path: there the directory the dispatcher wants
+# is present, so nothing is overridden.
+if(WIN32 AND CMAKE_GENERATOR_PLATFORM AND NOT DEFINED OpenCV_DIR)
+    set(_snow_shot_opencv_share
+        "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/share/opencv4")
+    if(NOT EXISTS "${_snow_shot_opencv_share}/${CMAKE_GENERATOR_PLATFORM}")
+        set(_snow_shot_opencv_lib_dirs "lib" "staticlib")
+        if(OpenCV_STATIC)
+            set(_snow_shot_opencv_lib_dirs "staticlib" "lib")
+        endif()
+        foreach(_snow_shot_opencv_lib_dir IN LISTS _snow_shot_opencv_lib_dirs)
+            file(GLOB _snow_shot_opencv_configs
+                "${_snow_shot_opencv_share}/*/*/${_snow_shot_opencv_lib_dir}/OpenCVConfig.cmake")
+            if(_snow_shot_opencv_configs)
+                list(GET _snow_shot_opencv_configs 0 _snow_shot_opencv_config)
+                get_filename_component(OpenCV_DIR "${_snow_shot_opencv_config}" DIRECTORY)
+                message(STATUS
+                    "Snow Shot: using the OpenCV package built for this triplet at ${OpenCV_DIR}")
+                break()
+            endif()
+        endforeach()
+        unset(_snow_shot_opencv_config)
+        unset(_snow_shot_opencv_configs)
+        unset(_snow_shot_opencv_lib_dir)
+        unset(_snow_shot_opencv_lib_dirs)
+    endif()
+    unset(_snow_shot_opencv_share)
+endif()
 find_package(OpenCV CONFIG REQUIRED COMPONENTS core imgproc dnn objdetect wechat_qrcode)
 find_package(onnxruntime CONFIG REQUIRED)
 
