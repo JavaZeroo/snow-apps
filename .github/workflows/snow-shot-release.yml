@@ -272,6 +272,12 @@ jobs:
           }
           "SNOW_QT_STATIC_DIR=$targetQtDir" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           "Qt6_DIR=$targetQtDir" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          # A cross-built Qt installs no host tools: moc, uic and rcc run on the
+          # build machine, so their CMake packages (Qt6CoreTools,
+          # Qt6WidgetsTools, ...) live only in the host kit. Consumers have to
+          # point Qt at it, or find_package(Qt6 COMPONENTS Widgets) fails on the
+          # missing Qt6WidgetsTools. The ARM64 preset reads this.
+          "SNOW_QT_HOST_PREFIX=$hostPrefix" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       # Saved here, not in a post step, so that a later failure in this job
       # does not discard a Qt kit that took hours to cross-compile.

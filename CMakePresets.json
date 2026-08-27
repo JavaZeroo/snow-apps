@@ -117,7 +117,8 @@
       "inherits": "snow-shot-msvc-release",
       "architecture": "ARM64",
       "cacheVariables": {
-        "VCPKG_TARGET_TRIPLET": "arm64-windows-static"
+        "VCPKG_TARGET_TRIPLET": "arm64-windows-static",
+        "QT_HOST_PATH": "$env{SNOW_QT_HOST_PREFIX}"
       }
     }
   ],
