@@ -98,6 +98,9 @@ pub(crate) struct HdrPreparedContext {
 }
 
 impl HdrPreparedContext {
+    // Only the x86_64 SIMD paths specialize on this; elsewhere the LUT choice
+    // never reaches a hot loop that would branch on it.
+    #[cfg_attr(not(target_arch = "x86_64"), allow(dead_code))]
     #[inline(always)]
     pub(crate) fn use_lut(&self) -> bool {
         self.luma_lut.is_some()
@@ -432,6 +435,8 @@ unsafe fn convert_f16_rgba_to_srgb_scalar_impl<const FORCE_OPAQUE_ALPHA: bool>(
     pixel_count: usize,
 ) {
     let lut = f16_to_srgb_lut();
+    // Only the prefetch below reads this, and that is x86_64-only.
+    #[cfg(target_arch = "x86_64")]
     let lut_ptr = lut.as_ptr();
     let mut src_words = src as *const u16;
     let mut dst_px = dst as *mut u32;
@@ -457,6 +462,9 @@ unsafe fn convert_f16_rgba_to_srgb_scalar_impl<const FORCE_OPAQUE_ALPHA: bool>(
         // Prefetch LUT entries for the *next* batch of 16 pixels
         // (4 channels * 2 bytes = 8 bytes per pixel, so 16 pixels ahead
         // is 64 u16 words = 128 bytes of source data).
+        // The macro expands to nothing off x86_64, which would leave an
+        // `unsafe` block with nothing unsafe in it.
+        #[cfg(target_arch = "x86_64")]
         if remaining >= 32 {
             unsafe {
                 prefetch_lut_entries!(src_words.add(64));

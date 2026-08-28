@@ -1402,6 +1402,9 @@ unsafe fn memcpy_rgba_nt_nofence_unchecked(src: *const u8, dst: *mut u8, pixel_c
     }
 }
 
+// `fence` only reaches the x86_64 non-temporal stores, which are the only
+// writes that need an sfence to become visible in order.
+#[cfg_attr(not(target_arch = "x86_64"), allow(unused_variables))]
 unsafe fn memcpy_rgba_nt_impl(src: *const u8, dst: *mut u8, pixel_count: usize, fence: bool) {
     if !nt_destination_is_aligned(dst as *const u8) {
         unsafe {
