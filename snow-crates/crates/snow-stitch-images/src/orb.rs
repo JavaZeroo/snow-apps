@@ -1,4 +1,7 @@
-use std::{mem::MaybeUninit, sync::OnceLock};
+use std::sync::OnceLock;
+// Both users -- assume_init_vec and blur_avx2 -- are x86-only.
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+use std::mem::MaybeUninit;
 
 use rayon::prelude::*;
 
