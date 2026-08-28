@@ -155,6 +155,18 @@ function(snow_add_rust_static_libraries batch_name)
             set(_rust_debug_runtime "/MDd /D_DEBUG")
             set(_rust_release_runtime "/MD")
         endif()
+        # ring compiles its AArch64 assembly with clang, which it selects for
+        # itself because those sources are GNU syntax. clang's GNU driver reads
+        # /MT as a file name -- "clang: error: no such file or directory:
+        # '/MT'" -- and cc-rs appends CFLAGS_<target> to CFLAGS rather than
+        # replacing it, so the switch has to be absent here rather than
+        # overridden for the cross target later. cc-rs derives the runtime
+        # switch from crt-static by itself and adds it only for MSVC-style
+        # tools, so leaving it out lets each compiler get the right spelling.
+        if(SNOW_RUST_TARGET STREQUAL "aarch64-pc-windows-msvc")
+            set(_rust_debug_runtime "/D_DEBUG")
+            set(_rust_release_runtime "")
+        endif()
         if(CMAKE_CONFIGURATION_TYPES)
             set(_rust_cxxflags
                 "$<IF:$<CONFIG:Debug>,$ENV{CXXFLAGS} ${_rust_debug_runtime},$ENV{CXXFLAGS} ${_rust_release_runtime}>")
