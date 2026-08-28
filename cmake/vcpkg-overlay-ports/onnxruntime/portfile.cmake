@@ -227,8 +227,29 @@ endif()
 
 if("directml" IN_LIST FEATURES)
     set(DIRECTML_PACKAGE_DIR "${CURRENT_BUILDTREES_DIR}/packages/Microsoft.AI.DirectML.1.15.4")
-    set(DIRECTML_RUNTIME "${DIRECTML_PACKAGE_DIR}/bin/x64-win/DirectML.dll")
-    set(DIRECTML_IMPORT_LIBRARY "${DIRECTML_PACKAGE_DIR}/bin/x64-win/DirectML.lib")
+    # The NuGet package ships one DirectML per architecture and ONNX Runtime
+    # links the one matching the platform it was configured for, so take the
+    # same one rather than always the x64 build. Find the directory instead of
+    # naming it: the package spells each architecture the way that platform
+    # does, and the casing is not ours to predict.
+    file(GLOB DIRECTML_ARCHITECTURE_DIRECTORIES "${DIRECTML_PACKAGE_DIR}/bin/*-win")
+    set(DIRECTML_BINARY_DIR "")
+    foreach(DIRECTML_ARCHITECTURE_DIRECTORY IN LISTS DIRECTML_ARCHITECTURE_DIRECTORIES)
+        get_filename_component(DIRECTML_ARCHITECTURE_NAME
+            "${DIRECTML_ARCHITECTURE_DIRECTORY}" NAME)
+        string(TOLOWER "${DIRECTML_ARCHITECTURE_NAME}" DIRECTML_ARCHITECTURE_NAME)
+        if(DIRECTML_ARCHITECTURE_NAME STREQUAL "${VCPKG_TARGET_ARCHITECTURE}-win")
+            set(DIRECTML_BINARY_DIR "${DIRECTML_ARCHITECTURE_DIRECTORY}")
+            break()
+        endif()
+    endforeach()
+    if(NOT DIRECTML_BINARY_DIR)
+        message(FATAL_ERROR
+            "The DirectML package holds no build for ${VCPKG_TARGET_ARCHITECTURE}. "
+            "Found: ${DIRECTML_ARCHITECTURE_DIRECTORIES}")
+    endif()
+    set(DIRECTML_RUNTIME "${DIRECTML_BINARY_DIR}/DirectML.dll")
+    set(DIRECTML_IMPORT_LIBRARY "${DIRECTML_BINARY_DIR}/DirectML.lib")
     foreach(DIRECTML_FILE IN ITEMS "${DIRECTML_RUNTIME}" "${DIRECTML_IMPORT_LIBRARY}")
         if(NOT EXISTS "${DIRECTML_FILE}")
             message(FATAL_ERROR "DirectML package file was not restored: ${DIRECTML_FILE}")
@@ -236,14 +257,17 @@ if("directml" IN_LIST FEATURES)
     endforeach()
 
     file(INSTALL "${DIRECTML_IMPORT_LIBRARY}" DESTINATION "${CURRENT_PACKAGES_DIR}/lib")
-    file(TO_CMAKE_PATH "${DIRECTML_IMPORT_LIBRARY}" DIRECTML_IMPORT_LIBRARY_CMAKE)
     file(GLOB ONNXRUNTIME_TARGETS_FILES
         "${CURRENT_PACKAGES_DIR}/share/onnxruntime/onnxruntimeTargets*.cmake")
     set(DIRECTML_TARGET_REFERENCE_FOUND FALSE)
     foreach(ONNXRUNTIME_TARGETS_FILE IN LISTS ONNXRUNTIME_TARGETS_FILES)
         file(READ "${ONNXRUNTIME_TARGETS_FILE}" ONNXRUNTIME_TARGETS_CONTENT)
-        string(REPLACE
-            "${DIRECTML_IMPORT_LIBRARY_CMAKE}"
+        # Match by pattern rather than by the path we globbed above: ONNX
+        # Runtime writes the architecture directory the way its own platform
+        # variable spells it, which need not be the casing on disk, and Windows
+        # opens the file either way. The package directory anchors the pattern.
+        string(REGEX REPLACE
+            "[^\"]*/Microsoft\\.AI\\.DirectML\\.[^/\"]+/bin/[^/\"]+/DirectML\\.lib"
             "\${_IMPORT_PREFIX}/lib/DirectML.lib"
             RELOCATABLE_ONNXRUNTIME_TARGETS_CONTENT
             "${ONNXRUNTIME_TARGETS_CONTENT}"
@@ -255,9 +279,11 @@ if("directml" IN_LIST FEATURES)
         endif()
     endforeach()
     if(NOT DIRECTML_TARGET_REFERENCE_FOUND)
-        message(STATUS
-            "ONNX Runtime targets do not reference an absolute DirectML import path; "
-            "using the staged lib/DirectML.lib directly")
+        # Leaving an absolute buildtrees path in the exported targets only
+        # surfaces when a consumer links, long after this directory is gone.
+        message(FATAL_ERROR
+            "ONNX Runtime targets reference no DirectML import library to relocate; "
+            "the exported targets would point into the build tree.")
     endif()
 
     file(INSTALL "${DIRECTML_RUNTIME}" DESTINATION "${CURRENT_PACKAGES_DIR}/bin")

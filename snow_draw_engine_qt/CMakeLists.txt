@@ -49,7 +49,11 @@ qt_add_library(snow_draw_engine_qt_canvas STATIC
     src/icons/draw_engine_icons.h
 )
 
-if(MSVC AND CMAKE_SIZEOF_VOID_P EQUAL 8)
+# CMAKE_SIZEOF_VOID_P is 8 on ARM64 too, so it cannot stand in for "x86-64
+# here"; ask the active VS platform instead, as the Rust target selection does.
+if(MSVC AND CMAKE_SIZEOF_VOID_P EQUAL 8
+   AND NOT CMAKE_VS_PLATFORM_NAME STREQUAL "ARM64"
+   AND NOT CMAKE_GENERATOR_PLATFORM STREQUAL "ARM64")
 set_source_files_properties(
         src/rendering/snow_canvas_filter_avx2.cpp
         src/rendering/snow_canvas_pen_mask_avx2.cpp
@@ -57,7 +61,7 @@ set_source_files_properties(
             COMPILE_OPTIONS "/arch:AVX2"
             SKIP_UNITY_BUILD_INCLUSION ON
     )
-elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64|amd64|i.86)$")
+elseif(NOT MSVC AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64|amd64|i.86)$")
     set_source_files_properties(
         src/rendering/snow_canvas_filter_avx2.cpp
         src/rendering/snow_canvas_pen_mask_avx2.cpp
