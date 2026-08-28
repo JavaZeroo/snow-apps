@@ -162,10 +162,10 @@ impl DetPreProcess {
             -self.mean[1] / self.std[1],
             -self.mean[2] / self.std[2],
         ];
+        // Both readers below are themselves x86_64-only, so off x86_64 this
+        // binding would have no one to answer.
         #[cfg(target_arch = "x86_64")]
         let use_avx2 = std::arch::is_x86_feature_detected!("avx2");
-        #[cfg(not(target_arch = "x86_64"))]
-        let use_avx2 = false;
 
         if row_parallel {
             let out_addr = out_slice.as_mut_ptr() as usize;
