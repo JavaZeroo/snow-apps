@@ -442,6 +442,8 @@ unsafe fn convert_f16_rgba_to_srgb_scalar_impl<const FORCE_OPAQUE_ALPHA: bool>(
     let mut dst_px = dst as *mut u32;
     let mut remaining = pixel_count;
 
+    // Defined only where it is invoked; the invocation below is x86_64-only.
+    #[cfg(target_arch = "x86_64")]
     macro_rules! prefetch_lut_entries {
         ($base:expr) => {
             #[cfg(target_arch = "x86_64")]
